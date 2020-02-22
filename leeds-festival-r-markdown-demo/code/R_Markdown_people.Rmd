@@ -1,0 +1,661 @@
+---
+title: "Example R Markdown Report"
+author: "PennyPegman"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+---
+
+```{r setup, include=FALSE, echo = FALSE}
+source("~/alldbconnection.R")
+connection <- alldbconnect("~/credentials.R", hive = TRUE, postgres = FALSE)
+
+library(dplyr)
+library(ggplot2) # for charts 
+library(scales) # needed for percent labels
+library(reshape2)
+library(knitr) # required for table
+library(kableExtra) # nice table formatting
+library(lubridate)
+library(DiagrammeR) #flowcharts
+library(plotly)
+library(magrittr)
+library(sparklyr)
+library(htmltools)
+library(htmlwidgets)
+library(reticulate)
+library(webshot)
+library(Hmisc)
+library(DBI)
+library(RODBC)
+library(data.table)
+library(DT)
+library(readr)
+library(RColorBrewer)
+```
+
+
+```{r load_data,  echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+system("hadoop fs -copyToLocal /user/burbankds/others/adhocs/LeedsFestival2019/age.csv ~/age.csv" ) 
+system("hadoop fs -copyToLocal /user/burbankds/others/adhocs/LeedsFestival2019/LThealthdisability.csv ~/LThealthdisability.csv" ) 
+system("hadoop fs -copyToLocal /user/burbankds/others/adhocs/LeedsFestival2019/ESAclaimants.csv ~/ESAclaimants.csv" ) 
+system("hadoop fs -copyToLocal /user/burbankds/others/adhocs/LeedsFestival2019/claimantcount_leeds.csv ~/claimantcount_leeds.csv" ) 
+system("hadoop fs -copyToLocal /user/burbankds/others/adhocs/LeedsFestival2019/qualifications.csv ~/qualifications.csv" ) 
+
+# Read CSVs
+age <- read_csv("~/age.csv")
+healthdis <- read_csv("~/LThealthdisability.csv")
+esa <- read_csv("~/ESAclaimants.csv")
+claimantcount <- read_csv("~/claimantcount_leeds.csv")
+qualifications <- read_csv("~/qualifications.csv")
+
+
+# Rename columns
+names(age)[1:23] = c("date","LA","geographyCode","RuralUrban","total","Age0to4","Age5to7","Age8to9","Age10to14","Age15","Age16to17","Age18to19","Age20to24",
+                                "Age25to29","Age30to44","Age45to59", "Age60to64", "Age65to74", "Age75to84", "Age85to89", "Age90over", "MeanAge", "MedianAge")
+names(healthdis)[1:8] = c("date","LA","geographyCode","RuralUrban","allhealthdis","limitedlot","limitedlittle","limitednot")
+
+names(qualifications)[1:17] = c("date","LA","geogcode","ruralurban","All","No","Level1","Level2","Apprenticeships","Level3","Level4","Other",
+                                "Students16to17","Students18over","StudentsEconActive_employment", "StudentsEconActive_Unemp", "StudentsEconInactive")
+
+
+# add code in here to remove CSVs from user home area so ok if re-run it
+```
+
+```{r format_data, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+#  AGE: condense down age bands and select only variables needed
+
+age_bands <- age %>% 
+       mutate(Age0to15 = Age0to4 + Age5to7 + Age8to9 + Age10to14 + Age15) %>%
+       mutate(Age18to24 = Age18to19 + Age20to24 ) %>%
+       mutate(Age25to59 = Age25to29 + Age30to44 + Age45to59) %>%
+       mutate(Age65over = Age65to74 + Age75to84 + Age85to89 + Age90over) %>%
+       select(LA, total, Age0to15, Age16to17, Age18to24, Age25to59, Age60to64, Age65over)
+# Add percentage in each age band
+age_bands <- age_bands %>%
+              mutate(age0to15_pct = (Age0to15 / total *100)) %>%
+              mutate(age16to17_pct = (Age16to17 / total *100)) %>%
+              mutate(age18to24_pct = (Age18to24 / total *100)) %>%
+              mutate(age25to59_pct = (Age25to59 / total *100)) %>%
+              mutate(age60to64_pct = (Age60to64 / total *100)) %>%
+              mutate(age65over_pct = (Age65over / total *100))
+
+# Restrict to just 5 LAs for comparision
+age_bands_5LAs <- age_bands %>%
+                  subset(LA %in% c("Leeds","Harrogate","York","Sheffield","Kingston upon Hull, City of"))
+# Rename Hull
+age_bands_5LAs$LA[age_bands_5LAs$LA == "Kingston upon Hull, City of"] = "Hull"
+
+# End of Age
+
+# Health Problems
+
+
+
+# Socio economic Status
+
+
+# Qualifications
+
+
+# ESA claimants over time
+esa$Date <- as.Date(esa$Date, "%m/%d/%Y")
+
+# Claimant count
+
+
+# Add a Publication date
+pub_date <- (format(today(),"%d %B %Y")) # Changed so it automatically updates the date of the report
+
+```
+
+Published: <span class="highlightGrey">`r pub_date`</span>
+<br><br>
+
+R markdown has many benefits:
+* You can embed explanatory text with charts, tables and other visuals, 
+* Include downloadable data links
+* Structure your report and include a table of contents on the left for easy navigation
+* Save as static HTML and send to your customers or host on a webpage
+* You can also output as slides, PDF and other formats
+* When the data changes you just import the new data and everything will update automatically - you can even embed "r variables" into the text sections so it will update the text as well as the data changes - e.g the published date above is automatic and changes based on when you run it (date is an r variable that gets updated)
+
+You **don't** need to be experienced in developing web pages as it's all very simple to code and put together.
+There are cheatsheets and easy to follow documentation to help you.
+
+However if you do have experience you can improve the presentation further by including CSS Style sheets and other features.
+
+This report shows some examples of charts which can be used with R markdown to communicate insights from data.
+ 
+## Total Population 
+
+As at the Census 2011
+
+Need to get the labels sorted so right at the end and make the pretty number
+Also get the bars in descending order
+
+```{r populationchart, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+library(plotly)
+
+
+y <- age_bands_5LAs$LA
+x1 <- round(age_bands_5LAs$total,0)
+
+# Convert the Site name to proper case
+proper <- function(x) paste0(toupper(substr(x, 1, 1)), tolower(substring(x, 2)))
+y <- proper(y)
+
+population <- data.frame(y, x1)
+
+# Arrange in ascending order so will be in descending order on chart
+population = population %>%
+            arrange(x1)
+
+# Generate the plot_ly chart
+plot_ly(population, x = ~x1, name='Total', y = ~y, type = 'bar', orientation = 'h',
+        marker = list(color = 'steelblue',
+                      line = list(color = 'white', width = 1))) %>%
+  
+  layout(xaxis = list(title = "",
+                      showgrid = FALSE,
+                      showline = FALSE,
+                      showticklabels = FALSE,
+                      zeroline = FALSE,
+                      domain = c(0.15, 1)),
+         yaxis = list(title = "",
+                      showgrid = FALSE,
+                      showline = FALSE,
+                      showticklabels = FALSE,
+                      zeroline = FALSE),
+         barmode = 'stack',
+         paper_bgcolor = 'white', plot_bgcolor = 'white',
+         margin = list(l = 10, r = 10, t = 10, b = 10),
+         showlegend = FALSE) %>%
+  # labeling the y-axis
+  add_annotations(xref = 'paper', yref = 'y', x = 0.13, y = y,
+                  xanchor = 'right',
+                  text = paste('<b>',y,'</b>'),
+                  font = list(family = 'Arial', size = 12,
+                            color = 'rgb(67, 67, 67)'),
+                  showarrow = FALSE, align = 'right') %>%
+  # labeling the percentages of each bar (x_axis)
+  add_annotations(xref = 'x', yref = 'y',
+                  x = x1 + 1500, y = y,
+                  text = paste('<b>',population[,"x1"]),
+                  font = list(family = 'Arial', size = 12,
+                            color = 'grey'),
+                  showarrow = FALSE) 
+
+#age_bands_5LAs_sorted = age_bands_5LAs %>%
+ #                           arrange(desc(total))
+# Bar Chart showing number of attempts by Bank
+
+# 
+# ggplot(data=age_bands_5LAs_sorted, aes(x=reorder(LA, total), y=total)) +
+#   geom_bar(stat="identity", position=position_dodge(), fill='steelblue') +
+#   geom_text(aes(label = population), hjust=-0.1, size=3, position=position_dodge(width = 1), inherit.aes = TRUE) +
+#   ylab ('Population') +
+#   xlab ('LA') +
+#   theme(legend.title=element_blank()) +
+#   ggtitle('Population') +
+#   coord_flip()
+
+
+```
+
+
+
+## Age Distribution
+
+You can use colour-blind friendly palettes for your data visualisations see: <https://www.datanovia.com/en/blog/top-r-color-palettes-to-know-for-great-data-visualization/>
+
+This chart shows the age distribution of five local authorities:
+* this bar chart can enable us to compare how similar the age distribution of **Leeds** is to other local authorities in the area.  
+* This is taken from Census 2011 data.
+
+** PERHAPS CHANGE COLOUR SCHEME TO MATCH THE OTHER CHARTS ON THIS REPORT **
+
+```{r agedistchart, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+#display.brewer.all(colorblindFriendly = TRUE)
+# Hexadecimal color specification 
+#brewer.pal(n = 6, name = "Set2")
+
+# Chart of Age distribution
+y <- age_bands_5LAs$LA
+x1 <- round(age_bands_5LAs$age0to15_pct,0)
+x2 <- round(age_bands_5LAs$age16to17_pct,0)
+x3 <- round(age_bands_5LAs$age18to24_pct,0)
+x4 <- round(age_bands_5LAs$age25to59_pct,0)
+x5 <- round(age_bands_5LAs$age60to64_pct,0)
+x6 <- round(age_bands_5LAs$age65over_pct,0)
+
+age_dist <- data.frame(y, x1, x2, x3, x4, x5, x6)
+
+
+top_labels <- c('Under 16', '16 to 17', '18 to 24', '25 to 59', '60 to 64', '65 and over')
+
+
+plot_ly(age_dist, x = ~x1, name='Under 16', y = ~y, type = 'bar', orientation = 'h',
+        marker = list(color = '#1B9E77',
+                      line = list(color = 'white', width = 1))) %>%
+  add_trace(x = ~x2, name='16 to 17', marker = list(color = '#D95F02')) %>%
+  add_trace(x = ~x3, name='18 to 24', marker = list(color = '#7570B3')) %>%
+  add_trace(x = ~x4, name='25 to 59', marker = list(color = '#E7298A')) %>%
+  add_trace(x = ~x5, name='60 to 64', marker = list(color = '#66A61E')) %>%
+  add_trace(x = ~x6, name='65 and over', marker = list(color = '#E6AB02')) %>%
+  
+#"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D"
+  layout(xaxis = list(title = "",
+                      showgrid = FALSE,
+                      showline = FALSE,
+                      showticklabels = FALSE,
+                      zeroline = FALSE,
+                      domain = c(0.15, 1)),
+         yaxis = list(title = "",
+                      showgrid = FALSE,
+                      showline = FALSE,
+                      showticklabels = FALSE,
+                      zeroline = FALSE),
+         barmode = 'stack',
+         paper_bgcolor = 'white', plot_bgcolor = 'white',
+         margin = list(l = 10, r = 10, t = 10, b = 10),
+         showlegend = TRUE) %>%
+  
+  # labeling the y-axis
+  add_annotations(xref = 'paper', yref = 'y', x = 0.14, y = y,
+                  xanchor = 'right',
+                  text = paste('<b>',y,'</b>'),
+                  font = list(family = 'Arial', size = 12,
+                            color = 'rgb(67, 67, 67)'),
+                  showarrow = FALSE, align = 'right') %>%
+  # labeling the percentages of each bar (x_axis)
+  add_annotations(xref = 'x', yref = 'y',
+                  x = x1 / 2, y = y,
+                  text = paste(age_dist[,"x1"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                            color = 'white'),
+                  showarrow = FALSE) %>%
+  add_annotations(xref = 'x', yref = 'y',
+                  x = x1 +x2/2, y = y,
+                  text = paste(age_dist[,"x2"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                              color = 'white'),
+                  showarrow = FALSE) %>%
+  add_annotations(xref = 'x', yref = 'y',
+                  x = x1 + x2 + x3 / 2, y = y,
+                  text = paste(age_dist[,"x3"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                              color = 'white'),
+                  showarrow = FALSE) %>%
+  add_annotations(xref = 'x', yref = 'y',
+                  x = x1 + x2 + x3 +x4 / 2, y = y,
+                  text = paste(age_dist[,"x4"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                              color = 'white'),
+                  showarrow = FALSE) %>%
+    add_annotations(xref = 'x', yref = 'y',
+                  x = x1 + x2 + x3 +x4 + x5 / 2, y = y,
+                  text = paste(age_dist[,"x5"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                              color = 'white'),
+                  showarrow = FALSE) %>%
+    add_annotations(xref = 'x', yref = 'y',
+                  x = x1 + x2 + x3 +x4 + x5 +x6 / 2, y = y,
+                  text = paste(age_dist[,"x6"], '%'),
+                  font = list(family = 'Arial', size = 12,
+                              color = 'white'),
+                  showarrow = FALSE)
+
+```
+
+## Health Problems and Disabilities
+
+This shows...  This is taken from Census 2011 data.
+
+```{r healthchart, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+
+
+```
+
+
+## Socio Economic Status
+
+This is taken from Census 2011 data
+
+## Qualifications
+
+This is taken from Census 2011 data.
+There is also data on the level of the qualifications.
+
+** ADD code to round the percentagesl and format the numbers in thousands** 
+
+This table shows the percentage of the population aged 16 and over with No Qualifications and also those with apprenticeships as their highest qualification
+
+```{r qualificationschart, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+qualifications2 <- qualifications %>%
+                  select(LA, All, No, Level1, Level2, Apprenticeships, Level3, Level4, Other) %>%                   
+                  subset(LA %in% c("Leeds","Harrogate","York","Sheffield","Kingston upon Hull, City of")) %>%
+                  mutate(pct_noqual = percent(No/All)) %>%
+                  mutate(pct_apprenticeship = percent(Apprenticeships/All))
+# Rename Hull
+qualifications2$LA[qualifications2$LA == "Kingston upon Hull, City of"] = "Hull"
+
+kable(qualifications2[,c("LA","All","pct_noqual", "pct_apprenticeship")], format = "markdown", row.names = FALSE,  col.names = c("Local Authority","Total Population aged 16 and over", "% with No qualification", "% with Apprenticeships"))
+```
+
+
+## Benefit Claimants
+
+This section looks at those claiming benefits - those on ESA (all 5 Local Authorities) and the claimant count (Leeds only)
+
+
+### ESA Claimants over time
+
+Need to change the colours of the lines and get the annotation for ESA introduction working
+
+```{r esaplot, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+library(plotly)
+
+x <- as.factor(esa$Date)
+y_harrogate <- esa$Harrogate
+y_hull <- esa$Hull
+y_leeds <- esa$Leeds
+y_sheffield <- esa$Sheffield
+y_york <- esa$York
+
+data <- data.frame(x, y_harrogate, y_hull, y_leeds, y_sheffield, y_york)
+
+xaxis <- list(title = "",
+               showticklabels = TRUE,
+              showline = FALSE,
+              tickangle = 315,
+              exponentformat = "E",
+              dtick=12,
+             ticks = 'outside',
+             tickcolor = 'rgb(204, 204, 204)',
+             tickfont = list(family = 'Arial',
+                             size = 10,
+                             color = 'rgb(82, 82, 82)'))
+
+
+
+
+yaxis <- list(title = "",
+             showline = FALSE,
+             showgrid = TRUE,
+             showticklabels = TRUE,
+             linecolor = 'rgb(204, 204, 204)',
+             linewidth = 2,
+             autotick = TRUE,
+             ticks = 'outside',
+             tickcolor = 'rgb(204, 204, 204)',
+             tickwidth = 2,
+             ticklen = 5,
+             tickfont = list(family = 'Arial',
+                             size = 10,
+                             color = 'rgb(82, 82, 82)'))
+
+margin <- list(autoexpand = FALSE,
+              l = 100,
+              r = 100,
+              t = 110)
+
+# Build the annotations
+
+rise_annotation <- list(
+  xref = 'paper',
+  yref = 'y',
+  x = "2011-01-08",
+  y = 8000,
+ #xanchor = 'right',
+#  yanchor = 'bottom',
+  text = ~paste('ESA was being introduced'),
+  arrowhead = 4,
+  arrowsize = .5,
+  arrowcolor="#CCCCCC",
+  ax = 0,
+  ay = -40,
+  font = list(family = 'Arial',
+              size = 10,
+              color = '#AAAAAA'),
+  showarrow = TRUE)
+
+harrogate_annotation <- list(
+  xref = 'paper',
+  x = 1,
+  y = y_harrogate[length(y_harrogate)],
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste(prettyNum(y_harrogate[length(y_harrogate)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'grey'),
+  showarrow = FALSE)
+
+hull_annotation <- list(
+  xref = 'paper',
+  x = 1,
+  y = y_hull[length(y_hull)]+500,
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste(prettyNum(y_hull[length(y_hull)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'hsl(33, 100%, 45%)'),
+  showarrow = FALSE)
+
+leeds_annotation <- list(
+  xref = 'paper',
+  x = 1,
+  y = y_leeds[length(y_leeds)]-500,
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste(prettyNum(y_leeds[length(y_leeds)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'hsl(207, 44%, 55%)'),
+  showarrow = FALSE)
+
+
+sheffield_annotation <- list(
+  xref = 'paper',
+  x = 1,
+  y = y_sheffield[length(y_sheffield)]-500,
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste(prettyNum(y_sheffield[length(y_sheffield)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'hsl(207, 44%, 55%)'),
+  showarrow = FALSE)
+
+york_annotation <- list(
+  xref = 'paper',
+  x = 1,
+  y = y_york[length(y_york)]-500,
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste(prettyNum(y_york[length(y_york)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'hsl(207, 44%, 55%)'),
+  showarrow = FALSE)
+
+
+
+
+plot_ly(data, x = ~x) %>%
+  add_trace(y = ~y_harrogate, type = 'scatter', name = "Harrogate", mode = 'lines', line = list(color = '#666666', width = 2))  %>%
+  add_trace(y = ~y_hull, type = 'scatter', name = "Hull", mode = 'lines', line = list(color = 'hsl(33, 100%, 45%)', width = 2)) %>%
+  add_trace(y = ~y_leeds, type = 'scatter', name = "Leeds", mode = 'lines', line = list(color = 'hsl(207, 44%, 55%)', width = 2)) %>%
+    add_trace(y = ~y_sheffield, type = 'scatter', name = "Sheffield", mode = 'lines', line = list(color = 'hsl(207, 44%, 55%)', width = 2)) %>%
+    add_trace(y = ~y_york, type = 'scatter', name = "York", mode = 'lines', line = list(color = 'hsl(207, 44%, 55%)', width = 2)) %>%
+  layout(title = "ESA claimants over time", xaxis = xaxis, yaxis = yaxis, margin = margin,
+         autosize = FALSE,
+         showlegend = TRUE,
+           annotations = rise_annotation) %>%
+          layout(annotations = harrogate_annotation)  %>%
+          layout(annotations = hull_annotation)  %>%
+          layout(annotations = leeds_annotation) %>%
+          layout(annotations = sheffield_annotation) %>%
+          layout(annotations = york_annotation) %>%
+          layout(legend = list(x = 0.05, y = 0.9)) %>%
+          layout(margin = list(l = 50, 
+                               r = 50, 
+                               b = 90,
+                               t = 70,
+                               pad = 0)) %>% # Stops the x labels getting cut off
+  layout(width = 780) %>%
+  layout(height = 460)
+
+
+```
+
+### Claimant Count (Leeds only)
+
+A Time-series of the Claimant count in Leeds, by gender
+
+```{r claimantcountplot, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+x <- as.Date(claimantcount$Month, "%m/%d/%Y")
+y_total <- claimantcount$Total
+y_males <- claimantcount$Male
+y_females <- claimantcount$Female
+
+claimantcount_data <- data.frame(x, y_total, y_males, y_females) %>%
+  mutate(formatted_date = as.Date(x, format= "%Y-%m-%d"))
+
+xaxis <- list(title = "",
+             linecolor = 'black',
+             linewidth = 2,
+             mirror = TRUE,
+              showticklabels = TRUE,
+              showline = FALSE,
+              tickangle = 315,
+              exponentformat = "E",
+              dtick=1,
+              ticks = 'outside',
+              tickcolor = 'rgb(204, 204, 204)',
+              tickfont = list(family = 'Arial',
+                             size = 12,
+                             color = 'rgb(82, 82, 82)'))
+
+yaxis <- list(title = "",
+             linecolor = 'black',
+             linewidth = 2,
+             mirror = TRUE,
+             showline = FALSE,
+             showgrid = TRUE,
+             showticklabels = TRUE,
+             linecolor = 'rgb(204, 204, 204)',
+             linewidth = 2,
+             autotick = TRUE,
+             ticks = 'outside',
+             tickcolor = 'rgb(204, 204, 204)',
+             tickwidth = 0.5,
+             ticklen = 5,
+             tickfont = list(family = 'Arial',
+                             size = 12,
+                             color = 'rgb(82, 82, 82)'))
+
+num_decs_annotation <- list(
+  xref = 'paper',
+  x = 0.965,
+  y = y_total[length(y_total)]+1000,
+  xanchor = 'left',
+  yanchor = 'middle',
+  text = paste("Total declarations:<br>",prettyNum(y_total[length(y_total)],big.mark=",")),
+    font = list(family = 'Arial',
+                size = 12,
+                color = 'rgba(55, 128, 191'),
+  showarrow = FALSE,
+  bgcolor = "#E2E2E2",
+  bordercolor = "#444",
+  borderwidth = 1)
+
+l <- list(
+  font = list(
+    family = "sans-serif",
+    size = 12,
+    color = "#000"),
+  bgcolor = "#E2E2E2",
+  bordercolor = "#444",
+  borderwidth = 1,
+  x = 0.05,
+  y = 1.05)
+
+t <- list(
+  family = "Arial",
+  size = 18,
+  color = 'black')
+
+plot_ly(claimantcount_data, x = ~as.factor(x)) %>%
+  add_trace(y = ~y_males, type = 'bar', name = "Males", 
+            marker = list(color = 'rgba(55, 128, 191, 0.65)', line = list(color = 'rgba(55, 128, 191, 0.7)', width = 2))) %>%
+    add_trace(y = ~y_females, type = 'bar', name = "Females", 
+              marker = list(color = 'rgba(255, 165, 0, 0.65)', line = list(color = 'rgba(255, 165, 0, 0.7)', width = 2))) %>%
+              
+  layout(title = "", font = t, xaxis = xaxis, yaxis = yaxis, margin = margin, barmode = 'stack',
+         autosize = TRUE,
+         showlegend = TRUE) %>%
+          layout(margin = list(l = 50, 
+                               r = 50, 
+                               b = 90,
+                               t = 70,
+                               pad = 0)) %>% # Stops the x labels getting cut off
+          layout(legend = l) %>%
+  layout(width = 780) %>%
+  layout(height = 460)
+```
+
+
+## Download Data
+
+
+<div RawDownloadLinksBox id="RawDownloadLinksBox">
+Download the ESA data <span class="highlightBlue">weekly figures:</span> 
+
+```{r data0,echo=FALSE,  message=FALSE, error=FALSE, warning=FALSE}
+
+
+
+DT::datatable(esa, 
+              extensions = 'Buttons',   options = list(
+                      bPaginate = FALSE, dom = 'Bfrtip',
+                      buttons =
+                        list(list(
+                          extend = 'collection', 
+                          buttons = list(c(extend = 'csv', filename= 'esa_data'),c(extend = 'excel', filename= 'esa_data')),
+                          text = 'Download')) )) %>%
+                        onRender("
+                            function dropTable0() {
+    document.getElementById('DataTables_Table_0').style.display = 'none';
+    document.getElementById('DataTables_Table_0_info').style.display = 'none';
+    document.getElementById('DataTables_Table_0_filter').style.display = 'none';}
+                                 ")
+
+
+```
+</div>
+
+
+```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, results="hide"}
+
+
+# remove CSV once converted to dataframe and no longer needed in any other code sections
+file.remove("~/claimantcount_leeds.csv") # will state TRUE as output when file is deleted
+file.remove("~/ESAclaimants.csv") # will state TRUE as output when file is deleted
+file.remove("~/LThealthdisability.csv") # will state TRUE as output when file is deleted
+file.remove("~/age.csv") # will state TRUE as output when file is deleted
+file.remove("~/qualifications.csv") # will state TRUE as output when file is deleted
+#file.remove("~/claimantcount_leeds.csv") # will state TRUE as output when file is deleted
+
+```
+
